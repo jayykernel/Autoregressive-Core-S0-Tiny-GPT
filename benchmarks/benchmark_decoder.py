@@ -1,0 +1,1 @@
+"""Decoder benchmarking entry point."""
