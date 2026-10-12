@@ -92,3 +92,19 @@ def test_positive_rescaling():
         rtol=1e-5,
         atol=1e-6,
     )
+    def test_gradcheck():
+    torch.manual_seed(42)
+
+    norm = RMSNorm(
+        dim=4,
+        eps=1e-6,
+    ).double()
+
+    x = torch.randn(
+        2,
+        4,
+        dtype=torch.float64,
+        requires_grad=True,
+    )
+
+    assert torch.autograd.gradcheck(norm, (x,))
