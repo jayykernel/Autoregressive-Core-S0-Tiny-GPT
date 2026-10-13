@@ -37,3 +37,38 @@ def test_residual_preserves_shape():
     output = block(x)
 
     assert output.shape == x.shape
+def test_rejects_mismatched_shape():
+    x = torch.randn(2, 5, 4)
+
+    block = PreNormResidual(
+        dim=4,
+        sublayer=nn.Linear(4, 8),
+    )
+
+    with pytest.raises(ValueError, match="shape must match"):
+        block(x)
+class ZeroSublayer(nn.Module):
+    def forward(self, x):
+        return torch.zeros_like(x)
+
+
+def test_identity_gradient_path():
+    x = torch.randn(2, 5, 4, requires_grad=True)
+
+    block = PreNormResidual(
+        dim=4,
+        sublayer=ZeroSublayer(),
+    )
+
+    output = block(x)
+
+    torch.testing.assert_close(output, x)
+
+    output.sum().backward()
+
+    # The zero-valued branch contributes no gradient.
+    # The direct residual path contributes gradient 1.
+    torch.testing.assert_close(
+        x.grad,
+        torch.ones_like(x),
+    )
