@@ -157,3 +157,73 @@ The figures in this report describe a small reference configuration.
 Different batch sizes, sequence lengths, dtypes, optimizer states,
 autograd behavior, and attention backends will produce different memory
 requirements.
+
+
+## 9. Measured Results
+
+### Environment
+
+- Execution device: CPU
+- Model dtype: float32
+- Input batch shape: [2, 8]
+- Logits shape: [2, 8, 256]
+- Model configuration: TinyGPT with 2 decoder blocks
+- Measurement script: examples/memory_report.py
+
+### Actual measurements
+
+| Measurement | Measured result |
+|---|---:|
+| Parameter count | 107,840 |
+| Parameter storage | 431,360 bytes (421.25 KiB) |
+| Input token IDs storage | 128 bytes |
+| Logits storage | 16,384 bytes (16 KiB) |
+| Cross-entropy loss | 5.50712251663208 |
+| Gradient storage | 431,360 bytes (421.25 KiB) |
+| AdamW optimizer state storage | 862,860 bytes (842.64 KiB) |
+| CUDA peak allocation | Not available; executed on CPU |
+
+### Interpretation
+
+The parameter-storage result matches the theoretical calculation:
+
+    107,840 parameters * 4 bytes = 431,360 bytes
+
+The gradient-storage result is also 431,360 bytes because the model's
+parameters and gradients are stored in float32 in this run.
+
+AdamW maintains optimizer state, including first and second moment
+estimates. The reported optimizer-state total also includes the small
+step-state tensors counted by the measurement script.
+
+The sum of parameter storage, gradient storage, and measured AdamW state
+storage is:
+
+    431,360 + 431,360 + 862,860 = 1,725,580 bytes
+                                  = approximately 1.65 MiB
+
+This total excludes activations, temporary tensors, Python objects,
+allocator overhead, and other runtime allocations.
+
+The logits occupy 16 KiB because the output tensor contains:
+
+    2 * 8 * 256 = 4,096 float32 elements
+
+The recorded loss is a smoke-test result obtained with randomly initialized
+model parameters and randomly generated token IDs. It verifies that the
+loss calculation returns a finite scalar; it does not demonstrate language
+model quality or successful training convergence.
+
+Because this run used the CPU, CUDA peak allocation was not measured.
+CPU process memory was not measured by the current script either.
+
+### Measurement limitations
+
+These results describe the specified model and test configuration. Memory
+usage changes with batch size, sequence length, dtype, architecture,
+optimizer, and execution environment.
+
+The current attention implementation explicitly expands KV heads for its
+GQA reference calculation. The theoretical KV-cache comparison in this
+report describes cache storage requirements, not a measured persistent
+cache implemented by this model.
