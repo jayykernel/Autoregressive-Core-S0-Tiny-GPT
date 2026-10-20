@@ -3,3 +3,5 @@ Name: autoregressive-core
 Version: 0.1.0
 Requires-Python: >=3.11
 Requires-Dist: torch
+Requires-Dist: fastapi>=0.110
+Requires-Dist: uvicorn>=0.27

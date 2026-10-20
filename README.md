@@ -1,6 +1,6 @@
-# Autoregressive Core — S0 TinyGPT
+# TinyGPT Studio — Autoregressive Core
 
-A small, educational decoder-only Transformer built with Python and PyTorch. The project implements a complete TinyGPT forward pass and makes the core mechanics explicit: rotary positional embeddings (RoPE), RMSNorm with pre-norm residual connections, SwiGLU, causal self-attention, and configurable multi-head attention (MHA) or grouped-query attention (GQA).
+A small, educational decoder-only Transformer built with Python and PyTorch, with a local training pipeline and a React playground. The implementation makes rotary positional embeddings (RoPE), RMSNorm, SwiGLU, causal self-attention, and grouped-query attention (GQA) explicit.
 
 The focus is not model scale. It is learning how a GPT-style decoder works, verifying tensor shapes and gradients, comparing implementations against independent references, and documenting memory requirements.
 
@@ -15,6 +15,9 @@ The focus is not model scale. It is learning how a GPT-style decoder works, veri
 - **Next-token cross-entropy loss** when target token IDs are supplied.
 - **Verification suite** covering shapes, gradients, causality, and decoder output/gradient agreement with an independently composed PyTorch reference.
 - **Memory report script** measuring parameter, gradient, optimizer-state, input, and logits storage.
+- Character tokenizer, Tiny Shakespeare download/local text fallback, train/validation split, AdamW training, periodic loss history, and checkpointing.
+- Temperature/top-k autoregressive sampling and a small FastAPI inference API.
+- React, TypeScript, and Vite interface showing live model diagnostics, tensor shape examples, and the causal mask.
 
 ## Architecture
 
@@ -77,7 +80,12 @@ autoregressive-core/
 │       ├── feedforward.py
 │       ├── attention.py
 │       ├── decoder.py
-│       └── model.py
+│       ├── model.py
+│       ├── tokenizer.py
+│       ├── training.py
+│       ├── generation.py
+│       ├── api.py
+│       └── __main__.py
 ├── tests/
 │   ├── test_attention.py
 │   ├── test_feedforward.py
@@ -86,7 +94,9 @@ autoregressive-core/
 │   ├── test_tinygpt.py
 │   ├── test_shapes.py
 │   ├── test_gradients.py
-│   └── test_causality.py
+│   ├── test_causality.py
+│   ├── test_training_tools.py
+│   └── test_api.py
 ├── docs/
 │   ├── tensor_shapes.md
 │   ├── design.md
@@ -95,6 +105,7 @@ autoregressive-core/
 │   ├── forward_pass.py
 │   └── memory_report.py
 ├── pyproject.toml
+├── web/                    # React + TypeScript + Vite UI
 └── README.md
 ```
 
@@ -104,6 +115,8 @@ The test directory may also contain additional component tests, such as RoPE or 
 
 - Python 3.11 or newer
 - PyTorch
+- FastAPI and Uvicorn for the API
+- Node.js and npm for the frontend
 - pytest for running the test suite
 
 The reported development run used Python 3.14 on CPU. The PyTorch version was not recorded in the measured output.
@@ -121,12 +134,20 @@ python -m venv .venv
 .\.venv\Scripts\Activate.ps1
 ```
 
-### 2. Install the project and test dependency
+### 2. Install the project and Python dependencies
 
 ```powershell
 python -m pip install --upgrade pip
 python -m pip install -e .
 python -m pip install pytest
+
+### 3. Install frontend dependencies
+
+```powershell
+cd web
+npm install
+cd ..
+```
 ```
 
 The editable install makes the `autoregressive_core` package importable from `src/` while you work on it.
@@ -194,6 +215,37 @@ The following values were recorded from a development run using the default conf
 The recorded loss was produced using randomly initialized parameters and random token IDs. It demonstrates a finite loss computation only; it is not a benchmark of model quality.
 
 The sum of parameter, gradient, and optimizer-state storage in this run is 1,725,580 bytes, approximately 1.65 MiB. This excludes activations, temporary tensors, Python objects, allocator overhead, and other runtime allocations, so it is **not total peak memory**.
+
+## Train and run TinyGPT Studio
+
+From the repository root, train a small CPU-friendly model (default 200 steps, batch 8, sequence 64):
+
+```powershell
+python -m autoregressive_core --steps 200 --batch-size 8 --sequence-length 64 --learning-rate 0.0003 --seed 42
+```
+
+The first run downloads the public Tiny Shakespeare text to `data/input.txt`. If network access is unavailable, put any UTF-8 training text at that path. Dataset and checkpoint files are ignored by Git. For a quick smoke run use `--steps 2 --batch-size 2 --sequence-length 32`; this is only a pipeline check and should not be treated as a quality-trained model. Training prints actual train/validation losses and saves `checkpoints/tinygpt.pt` with model weights, configuration, vocabulary, and history.
+
+Start the backend from the repository root:
+
+```powershell
+uvicorn autoregressive_core.api:app --app-dir src --reload
+```
+
+Start the frontend in another terminal:
+
+```powershell
+cd web
+npm run dev
+```
+
+Open the Vite URL shown in the terminal (normally `http://127.0.0.1:5173`). The API reads `checkpoints/tinygpt.pt` at startup; restart it after training. Without a checkpoint, health and model-info remain available and generation returns HTTP 503 instead of fabricated output. API endpoints are `/api/health`, `/api/model-info`, `/api/generate`, and `/api/loss-history`.
+
+### Current measured results and limitations
+
+A real CPU smoke run used the downloaded Tiny Shakespeare text for 2 optimization steps with batch size 2 and sequence length 32. The logged training losses were 4.1493 and 4.1870; validation losses were 4.3429 and 4.2838. It saved `checkpoints/tinygpt.pt` with vocabulary, configuration, weights, and those two history rows. This confirms the pipeline and checkpoint path; two steps are far too few to indicate useful language quality.
+
+The API loaded that checkpoint with 83,392 parameters, 65 characters, float32 weights totaling 333,568 bytes, and CPU device. A single HTTP generation request produced 12 new characters in 69.76 ms for the tested prompt. This one request is an example measurement, not a benchmark. The reference model has no KV cache, so generation recomputes the context at every step; CPU generation is intended for short demos. Attention visualization shows the structural causal mask only; learned attention weights are not exposed by the current model forward pass.
 
 ## Important tensor shapes
 

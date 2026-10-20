@@ -1,1 +1,3 @@
 torch
+fastapi>=0.110
+uvicorn>=0.27
